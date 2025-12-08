@@ -5,6 +5,7 @@ class OutputParser {
     private var errors: [BuildError] = []
     private var warnings: [BuildWarning] = []
     private var failedTests: [FailedTest] = []
+    private var executables: [Executable] = []
     private var buildTime: String?
     private var seenTestNames: Set<String> = []
     private var executedTestsCount: Int?
@@ -298,7 +299,8 @@ class OutputParser {
         printWarnings: Bool = false,
         warningsAsErrors: Bool = false,
         coverage: CodeCoverage? = nil,
-        printCoverageDetails: Bool = false
+        printCoverageDetails: Bool = false,
+        printExecutables: Bool = false
     ) -> BuildResult {
         resetState()
         let lines = input.split(separator: "\n", omittingEmptySubsequences: false)
@@ -344,7 +346,8 @@ class OutputParser {
             failedTests: failedTests.count,
             passedTests: computedPassedTests,
             buildTime: buildTime,
-            coveragePercent: coverage?.lineCoverage
+            coveragePercent: coverage?.lineCoverage,
+            executables: printExecutables && !executables.isEmpty ? executables.count : nil
         )
 
         return BuildResult(
@@ -354,8 +357,10 @@ class OutputParser {
             warnings: finalWarnings,
             failedTests: failedTests,
             coverage: coverage,
+            executables: executables,
             printWarnings: printWarnings,
-            printCoverageDetails: printCoverageDetails
+            printCoverageDetails: printCoverageDetails,
+            printExecutables: printExecutables
         )
     }
 
@@ -384,6 +389,7 @@ class OutputParser {
         errors = []
         warnings = []
         failedTests = []
+        executables = []
         buildTime = nil
         seenTestNames = []
         executedTestsCount = nil
@@ -402,9 +408,15 @@ class OutputParser {
         let containsRelevant =
             line.contains("error:") || line.contains("warning:") || line.contains("failed") || line.contains("passed")
             || line.contains("✘") || line.contains("✓") || line.contains("❌") || line.contains("Build succeeded")
-            || line.contains("Build failed") || line.contains("Executed")
+            || line.contains("Build failed") || line.contains("Executed") || line.contains("RegisterWithLaunchServices")
 
         if !containsRelevant {
+            return
+        }
+
+        // Parse executable registration (check first as it's the least common)
+        if let executable = parseExecutable(line) {
+            executables.append(executable)
             return
         }
 
@@ -807,5 +819,33 @@ class OutputParser {
         }
 
         return nil
+    }
+
+    private func parseExecutable(_ line: String) -> Executable? {
+        // Pattern: RegisterWithLaunchServices /path/to/Executable.app (in target 'TargetName' from project 'ProjectName')
+        guard line.hasPrefix("RegisterWithLaunchServices ") else {
+            return nil
+        }
+
+        // Find the path (between "RegisterWithLaunchServices " and " (in target")
+        let afterPrefix = line.dropFirst("RegisterWithLaunchServices ".count)
+        guard let targetRange = afterPrefix.range(of: " (in target '") else {
+            return nil
+        }
+
+        let path = String(afterPrefix[..<targetRange.lowerBound])
+
+        // Extract the name from the path (last component, e.g., "ClaudeSettings.app")
+        let name = (path as NSString).lastPathComponent
+
+        // Extract the target name
+        let afterTarget = afterPrefix[targetRange.upperBound...]
+        guard let targetEnd = afterTarget.range(of: "' from project") else {
+            return nil
+        }
+
+        let target = String(afterTarget[..<targetEnd.lowerBound])
+
+        return Executable(path: path, name: name, target: target)
     }
 }

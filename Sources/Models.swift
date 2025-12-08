@@ -7,11 +7,13 @@ struct BuildResult: Codable {
     let warnings: [BuildWarning]
     let failedTests: [FailedTest]
     let coverage: CodeCoverage?
+    let executables: [Executable]
     let printWarnings: Bool
     let printCoverageDetails: Bool
+    let printExecutables: Bool
 
     enum CodingKeys: String, CodingKey {
-        case status, summary, errors, warnings, coverage
+        case status, summary, errors, warnings, coverage, executables
         case failedTests = "failed_tests"
     }
 
@@ -22,8 +24,10 @@ struct BuildResult: Codable {
         warnings: [BuildWarning],
         failedTests: [FailedTest],
         coverage: CodeCoverage?,
+        executables: [Executable] = [],
         printWarnings: Bool,
-        printCoverageDetails: Bool = false
+        printCoverageDetails: Bool = false,
+        printExecutables: Bool = false
     ) {
         self.status = status
         self.summary = summary
@@ -31,8 +35,10 @@ struct BuildResult: Codable {
         self.warnings = warnings
         self.failedTests = failedTests
         self.coverage = coverage
+        self.executables = executables
         self.printWarnings = printWarnings
         self.printCoverageDetails = printCoverageDetails
+        self.printExecutables = printExecutables
     }
 
     init(from decoder: Decoder) throws {
@@ -43,8 +49,10 @@ struct BuildResult: Codable {
         warnings = try container.decodeIfPresent([BuildWarning].self, forKey: .warnings) ?? []
         failedTests = try container.decodeIfPresent([FailedTest].self, forKey: .failedTests) ?? []
         coverage = try container.decodeIfPresent(CodeCoverage.self, forKey: .coverage)
+        executables = try container.decodeIfPresent([Executable].self, forKey: .executables) ?? []
         printWarnings = false
         printCoverageDetails = false
+        printExecutables = false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -68,6 +76,10 @@ struct BuildResult: Codable {
         // In summary-only mode, coverage_percent in summary is sufficient
         if let coverage = coverage, printCoverageDetails {
             try container.encode(coverage, forKey: .coverage)
+        }
+
+        if printExecutables && !executables.isEmpty {
+            try container.encode(executables, forKey: .executables)
         }
     }
 
@@ -181,6 +193,7 @@ struct BuildSummary: Codable {
     let passedTests: Int?
     let buildTime: String?
     let coveragePercent: Double?
+    let executables: Int?
 
     enum CodingKeys: String, CodingKey {
         case errors
@@ -189,6 +202,25 @@ struct BuildSummary: Codable {
         case passedTests = "passed_tests"
         case buildTime = "build_time"
         case coveragePercent = "coverage_percent"
+        case executables
+    }
+
+    init(
+        errors: Int,
+        warnings: Int,
+        failedTests: Int,
+        passedTests: Int?,
+        buildTime: String?,
+        coveragePercent: Double?,
+        executables: Int? = nil
+    ) {
+        self.errors = errors
+        self.warnings = warnings
+        self.failedTests = failedTests
+        self.passedTests = passedTests
+        self.buildTime = buildTime
+        self.coveragePercent = coveragePercent
+        self.executables = executables
     }
 
     func encode(to encoder: Encoder) throws {
@@ -206,6 +238,9 @@ struct BuildSummary: Codable {
         }
         if let coveragePercent = coveragePercent {
             try container.encode(coveragePercent, forKey: .coveragePercent)
+        }
+        if let executables = executables {
+            try container.encode(executables, forKey: .executables)
         }
     }
 }
@@ -274,4 +309,10 @@ struct FileCoverage: Codable {
         case coveredLines = "covered_lines"
         case executableLines = "executable_lines"
     }
+}
+
+struct Executable: Codable {
+    let path: String
+    let name: String
+    let target: String
 }
